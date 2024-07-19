@@ -162,3 +162,7 @@ cython_debug/
 # Mac system
 .DS_Store
 
+# Local
+output/
+*.pth
+

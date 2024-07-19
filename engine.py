@@ -15,6 +15,7 @@ import sys
 from typing import Iterable
 import torch
 import util.misc as utils
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -63,13 +64,19 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(acc1=acc1)
-        metric_logger.update(acc5=acc5)
+        # metric_logger.update(acc5=acc5)
+
+        f1, precision, recall = utils.class_f1_precision_recall(outputs, targets)
+        metric_logger.update(f1=f1)
+        metric_logger.update(precision=precision)
+        metric_logger.update(recall=recall)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    stats["acc_std"] = metric_logger.meters["acc1"].std
+    return stats
 
 
 @torch.no_grad()
@@ -79,6 +86,8 @@ def evaluate(model, criterion,  data_loader, device, output_dir):
 
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
+    labels = []
+    preds = []
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
@@ -87,22 +96,49 @@ def evaluate(model, criterion,  data_loader, device, output_dir):
         for t in targets:
             del t["file_name"]
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-
         outputs,_,_,_,_ = model(samples)
+        
+        query_logits = outputs['query_logits']
+        target_classes = torch.cat([t["image_label"] for t in targets])
+    
+        # Assuming the highest logit value corresponds to the predicted class
+        _, pred = torch.max(query_logits, dim=1)
+    
+        # Convert to numpy arrays for sklearn metrics
+        pred_np = pred.cpu().numpy()
+        target_np = target_classes.cpu().numpy()
+
+        labels.extend(target_np)
+        preds.extend(pred_np)
         loss_dict = criterion(outputs, targets, model)
 
-        ## reduce losses over all GPUs for logging purposes
+        # ## reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         loss_value =sum(loss_dict_reduced.values())
 
         metric_logger.update(loss=loss_value)                                   
-        acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
-        metric_logger.update(acc1=acc1)
-        metric_logger.update(acc5=acc5)
+        # acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
+        # metric_logger.update(acc1=acc1)
 
+        # f1, precision, recall = utils.class_f1_precision_recall(outputs, targets)
+        # metric_logger.update(f1=f1)
+        # metric_logger.update(precision=precision)
+        # metric_logger.update(recall=recall)
+        # metric_logger.update(acc5=acc5)
+
+    acc = accuracy_score(preds, labels)
+    precision, recall, f1, _  = precision_recall_fscore_support(preds, labels, average='macro')
+    
     # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
-    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
+    # metric_logger.synchronize_between_processes()
+    # print("Averaged stats:", metric_logger)
+    print("Stats: Accuracy {acc}, F1 {f1}, Recall {rc}, Precision {pr}, ".format(acc=acc * 100, f1=f1 * 100, rc=recall * 100, pr=precision * 100))
+    # stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    stats = {
+        "loss":  metric_logger.meters["loss"].global_avg,
+        "accuracy": acc * 100,
+        "precision": precision * 100,
+        "recall": recall * 100,
+        "f1": f1 * 100,
+    }
     return stats
