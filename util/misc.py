@@ -529,42 +529,28 @@ def class_accuracy(output, target, topk=(1,)):
 
     return acc1, acc5, correct[0]
 
-def class_accuracy(output, target, topk=(1,)):
-    """
-    Computes the accuracy over the k top predictions for the specified values of k
-    returns top-1 acuuracy, top-5 accuracy and boolean prediction of an image for visualization
-    """
-
+@torch.no_grad()
+def class_f1_precision_recall(output, target, args, averager = None):
     query_logits = output['query_logits']
     target_classes = torch.cat([t["image_label"] for t in target])
 
-    batch_size = query_logits.size(0)
-    maxk = min(max(topk), query_logits.size(1))
-
-    _, pred = query_logits.topk(maxk, dim=1, largest=True, sorted=True)
-
-    pred = pred.t()
-    correct = pred.eq(target_classes.reshape(1, -1).expand_as(pred))
-
-    acc1, acc5 = [
-        correct[: min(k, maxk)].reshape(-1).float().sum(0) * 100.0 / batch_size
-        for k in topk
-    ]
-
-    return acc1, acc5, correct[0]
-
-def class_f1_precision_recall(output, target):
-    query_logits = output['query_logits']
-    target_classes = torch.cat([t["image_label"] for t in target])
-
-    # Assuming the highest logit value corresponds to the predicted class
-    _, pred = torch.max(query_logits, dim=1)
-
+    if args.num_queries > 1:
+        # Assuming the highest logit value corresponds to the predicted class
+        _, pred = torch.max(query_logits, dim=1)
+        averager = "weighted" if averager is None else averager
+    else:
+        # Apply sigmoid to convert logits to probabilities
+        probs = torch.sigmoid(query_logits)
+    
+        # Assuming the threshold of 0.5 to decide the predicted class
+        pred = (probs >= 0.5).long().squeeze()
+        averager = "binary"
+        
     # Convert to numpy arrays for sklearn metrics
     pred_np = pred.cpu().numpy()
     target_np = target_classes.cpu().numpy()
 
     # Compute precision, recall, and F1 score
-    precision, recall, f1, _ = precision_recall_fscore_support(target_np, pred_np, average='weighted')
+    precision, recall, f1, _ = precision_recall_fscore_support(target_np, pred_np, average=averager)
 
     return f1 * 100, precision * 100, recall * 100

@@ -59,14 +59,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
 
-        acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
-
+        # acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
+        acc = accuracy_score(outputs, targets)
+        
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-        metric_logger.update(acc1=acc1)
+        metric_logger.update(acc=acc)
         # metric_logger.update(acc5=acc5)
 
-        f1, precision, recall = utils.class_f1_precision_recall(outputs, targets)
+        f1, precision, recall = utils.class_f1_precision_recall(outputs, targets, criterion.args)
         metric_logger.update(f1=f1)
         metric_logger.update(precision=precision)
         metric_logger.update(recall=recall)
@@ -75,7 +76,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    stats["acc_std"] = metric_logger.meters["acc1"].std
+    stats["acc_std"] = metric_logger.meters["acc"].std
     return stats
 
 
@@ -127,7 +128,8 @@ def evaluate(model, criterion,  data_loader, device, output_dir):
         # metric_logger.update(acc5=acc5)
 
     acc = accuracy_score(preds, labels)
-    precision, recall, f1, _  = precision_recall_fscore_support(preds, labels, average='macro')
+    # precision, recall, f1, _  = precision_recall_fscore_support(preds, labels, average='macro')
+    f1, precision, recall = utils.class_f1_precision_recall(preds, labels, criterion.args, averager='macro')
     
     # gather the stats from all processes
     # metric_logger.synchronize_between_processes()

@@ -95,11 +95,17 @@ class SetCriterion(nn.Module):
         device = query_logits.device
 
         target_classes = torch.cat([t['image_label'] for t in targets]) 
-        
-        criterion = torch.nn.CrossEntropyLoss()
-        classification_loss=criterion(query_logits, target_classes)
 
-        losses = {'CE_loss': classification_loss}
+        if self.args.num_queries == 1:
+            criterion = torch.nn.BCEWithLogitsLoss()
+            classification_loss=criterion(query_logits, target_classes)
+    
+            losses = {'BCE_loss': classification_loss}
+        else:
+            criterion = torch.nn.CrossEntropyLoss()
+            classification_loss=criterion(query_logits, target_classes)
+    
+            losses = {'CE_loss': classification_loss}
         return losses
 
     def forward(self, outputs, targets, model):
