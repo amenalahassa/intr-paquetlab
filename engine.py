@@ -15,7 +15,7 @@ import sys
 from typing import Iterable
 import torch
 import util.misc as utils
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+# from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -33,13 +33,20 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
 
+        weights = torch.tensor([t["weight"] for t in targets])
+        
         filenames=[t["file_name"] for t in targets]
         for t in targets:
             del t["file_name"]
+
+        # tg = [t['image_label'].item() for t in targets]
+        # counts = {item: tg.count(item) for item in set(tg)}
+        # print(f"Number of items per class: {counts}")
+        
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
         outputs, _ ,_ ,_ ,_  = model(samples)
-        loss_dict = criterion(outputs, targets, model)
+        loss_dict = criterion(outputs, targets, model, weights = weights.to(device))
 
         ## INTR uses only one type of loss i.e., CE loss
         losses = sum(loss_dict[k] for k in loss_dict.keys())
@@ -60,17 +67,18 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         optimizer.step()
 
         # acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
-        acc = accuracy_score(outputs, targets)
+        # acc = accuracy_score(outputs, targets)
+        acc, f1, precision, recall, b_acc = utils.class_f1_precision_recall(outputs, targets, criterion.args, weights = weights)
         
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(acc=acc)
         # metric_logger.update(acc5=acc5)
 
-        f1, precision, recall = utils.class_f1_precision_recall(outputs, targets, criterion.args)
         metric_logger.update(f1=f1)
         metric_logger.update(precision=precision)
         metric_logger.update(recall=recall)
+        metric_logger.update(binary_acc=b_acc)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -87,11 +95,13 @@ def evaluate(model, criterion,  data_loader, device, output_dir):
 
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
-    labels = []
-    preds = []
+    # labels = []
+    # preds = []
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
+        
+        weights = torch.tensor([t["weight"] for t in targets])
 
         filenames=[t["file_name"] for t in targets]
         for t in targets:
@@ -99,48 +109,52 @@ def evaluate(model, criterion,  data_loader, device, output_dir):
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         outputs,_,_,_,_ = model(samples)
         
-        query_logits = outputs['query_logits']
-        target_classes = torch.cat([t["image_label"] for t in targets])
+        # query_logits = outputs['query_logits']
+        # target_classes = torch.cat([t["image_label"] for t in targets])
     
         # Assuming the highest logit value corresponds to the predicted class
-        _, pred = torch.max(query_logits, dim=1)
+        # _, pred = torch.max(query_logits, dim=1)
     
-        # Convert to numpy arrays for sklearn metrics
-        pred_np = pred.cpu().numpy()
-        target_np = target_classes.cpu().numpy()
+        # # Convert to numpy arrays for sklearn metrics
+        # pred_np = pred.cpu().numpy()
+        # target_np = target_classes.cpu().numpy()
 
-        labels.extend(target_np)
-        preds.extend(pred_np)
-        loss_dict = criterion(outputs, targets, model)
+        # labels.extend(target_np)
+        # preds.extend(pred_np)
+        loss_dict = criterion(outputs, targets, model, weights = weights.to(device))
 
         # ## reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
-        loss_value =sum(loss_dict_reduced.values())
+        loss_value = sum(loss_dict_reduced.values())
 
         metric_logger.update(loss=loss_value)                                   
         # acc1, acc5, _ = utils.class_accuracy(outputs, targets, topk=(1, 5))
         # metric_logger.update(acc1=acc1)
 
         # f1, precision, recall = utils.class_f1_precision_recall(outputs, targets)
-        # metric_logger.update(f1=f1)
-        # metric_logger.update(precision=precision)
-        # metric_logger.update(recall=recall)
-        # metric_logger.update(acc5=acc5)
+        
+        acc, f1, precision, recall, b_acc = utils.class_f1_precision_recall(outputs, targets, criterion.args, weights = weights)
 
-    acc = accuracy_score(preds, labels)
+        metric_logger.update(f1=f1)
+        metric_logger.update(precision=precision)
+        metric_logger.update(recall=recall)
+        metric_logger.update(acc=acc)
+        metric_logger.update(binary_acc=b_acc)
+
+    # acc = accuracy_score(preds, labels)
     # precision, recall, f1, _  = precision_recall_fscore_support(preds, labels, average='macro')
-    f1, precision, recall = utils.class_f1_precision_recall(preds, labels, criterion.args, averager='macro')
+    # acc, f1, precision, recall = utils.class_f1_precision_recall(preds, labels, criterion.args, averager='macro')
     
     # gather the stats from all processes
-    # metric_logger.synchronize_between_processes()
-    # print("Averaged stats:", metric_logger)
-    print("Stats: Accuracy {acc}, F1 {f1}, Recall {rc}, Precision {pr}, ".format(acc=acc * 100, f1=f1 * 100, rc=recall * 100, pr=precision * 100))
-    # stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    stats = {
-        "loss":  metric_logger.meters["loss"].global_avg,
-        "accuracy": acc * 100,
-        "precision": precision * 100,
-        "recall": recall * 100,
-        "f1": f1 * 100,
-    }
+    metric_logger.synchronize_between_processes()
+    print("Averaged stats:", metric_logger)
+    # print("Stats: Accuracy {acc}, F1 {f1}, Recall {rc}, Precision {pr}, ".format(acc=acc, f1=f1, rc=recall, pr=precision))
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    # stats = {
+    #     "loss":  metric_logger.meters["loss"].global_avg,
+    #     "accuracy": acc ,
+    #     "precision": precision,
+    #     "recall": recall,
+    #     "f1": f1,
+    # }
     return stats

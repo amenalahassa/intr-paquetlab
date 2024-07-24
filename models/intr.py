@@ -86,7 +86,7 @@ class SetCriterion(nn.Module):
         self.args = args
         self.model = model
 
-    def get_loss(self, outputs, targets, model):
+    def get_loss(self, outputs, targets, model, weights=None):
         """ CE Classification loss
         targets dicts must contain the key "image_label".
         """
@@ -97,18 +97,18 @@ class SetCriterion(nn.Module):
         target_classes = torch.cat([t['image_label'] for t in targets]) 
 
         if self.args.num_queries == 1:
-            criterion = torch.nn.BCEWithLogitsLoss()
-            classification_loss=criterion(query_logits, target_classes)
+            criterion = torch.nn.BCEWithLogitsLoss(weight=weights)
+            classification_loss=criterion(query_logits.squeeze(), target_classes.float())
     
             losses = {'BCE_loss': classification_loss}
         else:
-            criterion = torch.nn.CrossEntropyLoss()
+            criterion = torch.nn.CrossEntropyLoss(weight=weights)
             classification_loss=criterion(query_logits, target_classes)
     
             losses = {'CE_loss': classification_loss}
         return losses
 
-    def forward(self, outputs, targets, model):
+    def forward(self, outputs, targets, model, weights=None):
         """ This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format.
@@ -116,7 +116,7 @@ class SetCriterion(nn.Module):
                       The expected keys in each dict depends on the losses applied. Here we have used only CE loss.
         """
         losses = {}
-        losses.update(self.get_loss(outputs, targets, model))
+        losses.update(self.get_loss(outputs, targets, model, weights=weights))
         return losses
 
 

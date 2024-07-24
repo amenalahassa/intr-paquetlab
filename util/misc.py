@@ -19,7 +19,7 @@ import subprocess
 from packaging import version
 from typing import Optional, List
 from collections import defaultdict, deque
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score, balanced_accuracy_score
 
 
 import torch
@@ -530,7 +530,7 @@ def class_accuracy(output, target, topk=(1,)):
     return acc1, acc5, correct[0]
 
 @torch.no_grad()
-def class_f1_precision_recall(output, target, args, averager = None):
+def class_f1_precision_recall(output, target, args, averager = None, weights=None):
     query_logits = output['query_logits']
     target_classes = torch.cat([t["image_label"] for t in target])
 
@@ -543,7 +543,7 @@ def class_f1_precision_recall(output, target, args, averager = None):
         probs = torch.sigmoid(query_logits)
     
         # Assuming the threshold of 0.5 to decide the predicted class
-        pred = (probs >= 0.5).long().squeeze()
+        pred = (probs >= 0.5).int().squeeze()
         averager = "binary"
         
     # Convert to numpy arrays for sklearn metrics
@@ -552,5 +552,7 @@ def class_f1_precision_recall(output, target, args, averager = None):
 
     # Compute precision, recall, and F1 score
     precision, recall, f1, _ = precision_recall_fscore_support(target_np, pred_np, average=averager)
+    acc = accuracy_score(target_np, pred_np)
+    b_acc = balanced_accuracy_score(target_np, pred_np, sample_weight=weights)
 
-    return f1 * 100, precision * 100, recall * 100
+    return acc*100, f1 * 100, precision * 100, recall * 100, b_acc * 100
