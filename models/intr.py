@@ -98,7 +98,7 @@ class SetCriterion(nn.Module):
 
         if self.args.num_queries == 1:
             criterion = torch.nn.BCEWithLogitsLoss(weight=weights)
-            classification_loss=criterion(query_logits.squeeze(), target_classes.float())
+            classification_loss = criterion(query_logits.flatten(), target_classes.float())
     
             losses = {'BCE_loss': classification_loss}
         else:

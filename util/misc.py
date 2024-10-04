@@ -19,7 +19,7 @@ import subprocess
 from packaging import version
 from typing import Optional, List
 from collections import defaultdict, deque
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score, balanced_accuracy_score
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score, balanced_accuracy_score,  confusion_matrix, ConfusionMatrixDisplay
 
 
 import torch
@@ -43,7 +43,8 @@ class SmoothedValue(object):
 
     def __init__(self, window_size=20, fmt=None):
         if fmt is None:
-            fmt = "{median:.4f} ({global_avg:.4f})"
+            # fmt = "{median:.4f} ({global_avg:.4f})"
+            fmt = "{global_avg:.4f}"
         self.deque = deque(maxlen=window_size)
         self.total = 0.0
         self.count = 0
@@ -84,7 +85,7 @@ class SmoothedValue(object):
 
     @property
     def global_avg(self):
-        return self.total / self.count
+        return self.total / self.count 
 
     @property
     def max(self):
@@ -100,7 +101,7 @@ class SmoothedValue(object):
             avg=self.avg,
             global_avg=self.global_avg,
             max=self.max,
-            value=self.value)
+            value=self.value) if self.count > 0 else "-"
 
 
 def all_gather(data):
@@ -530,20 +531,24 @@ def class_accuracy(output, target, topk=(1,)):
     return acc1, acc5, correct[0]
 
 @torch.no_grad()
-def class_f1_precision_recall(output, target, args, averager = None, weights=None):
-    query_logits = output['query_logits']
-    target_classes = torch.cat([t["image_label"] for t in target])
-
+def class_f1_precision_recall(output, target, args, model_output = True, averager = None, weights=None, plot_confusion = False, labels_name = None):
+    if model_output:
+        query_logits = output['query_logits']
+        target_classes = torch.cat([t["image_label"] for t in target])
+    else:
+        query_logits = torch.stack(output)
+        target_classes = torch.tensor(target)
+    
     if args.num_queries > 1:
         # Assuming the highest logit value corresponds to the predicted class
         _, pred = torch.max(query_logits, dim=1)
         averager = "weighted" if averager is None else averager
     else:
         # Apply sigmoid to convert logits to probabilities
-        probs = torch.sigmoid(query_logits)
+        probs = torch.sigmoid(query_logits).flatten()
     
         # Assuming the threshold of 0.5 to decide the predicted class
-        pred = (probs >= 0.5).int().squeeze()
+        pred = (probs >= 0.5).int()
         averager = "binary"
         
     # Convert to numpy arrays for sklearn metrics
@@ -555,4 +560,43 @@ def class_f1_precision_recall(output, target, args, averager = None, weights=Non
     acc = accuracy_score(target_np, pred_np)
     b_acc = balanced_accuracy_score(target_np, pred_np, sample_weight=weights)
 
+    if plot_confusion: 
+        cm = confusion_matrix(target_np, pred_np)
+
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels_name)
+        disp.plot(cmap=plt.cm.Blues)  # You can change the colormap if desired
+        plt.title("Confusion Matrix")
+        plt.show()
+    
     return acc*100, f1 * 100, precision * 100, recall * 100, b_acc * 100
+
+@torch.no_grad()
+def plot_confusion(output, target, args, model_output = True, averager = None, labels_name = None):
+    if model_output:
+        query_logits = output['query_logits']
+        target_classes = torch.cat([t["image_label"] for t in target])
+    else:
+        query_logits = torch.stack(output)
+        target_classes = torch.tensor(target)
+    
+    if args.num_queries > 1:
+        # Assuming the highest logit value corresponds to the predicted class
+        _, pred = torch.max(query_logits, dim=1)
+        averager = "weighted" if averager is None else averager
+    else:
+        # Apply sigmoid to convert logits to probabilities
+        probs = torch.sigmoid(query_logits).flatten()
+    
+        # Assuming the threshold of 0.5 to decide the predicted class
+        pred = (probs >= 0.5).int()
+        averager = "binary"
+        
+    # Convert to numpy arrays for sklearn metrics
+    pred_np = pred.cpu().numpy()
+    target_np = target_classes.cpu().numpy()
+    cm = confusion_matrix(target_np, pred_np)
+
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels_name)
+    disp.plot(cmap=plt.cm.Blues)  # You can change the colormap if desired
+    plt.title("Confusion Matrix")
+    plt.show()
