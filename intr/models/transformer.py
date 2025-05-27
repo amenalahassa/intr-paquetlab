@@ -11,12 +11,10 @@
 INTR Transformer class.
 """
 import copy
-from typing import Optional, List
-
+from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
-import math
 
 class Transformer(nn.Module):
 

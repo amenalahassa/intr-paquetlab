@@ -17,7 +17,7 @@ import torch.nn.functional as F
 import random
 from .backbone import build_backbone
 from .transformer import build_transformer
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+from intr.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        )
 
 class INTR(nn.Module):
@@ -126,27 +126,28 @@ def build(args):
     So, the `num_queries` here is actually the number of classes in the dataset.
     """
 
-    if args.dataset_name==   'cub':
-        args.num_queries=200
-    # elif args.dataset_name== 'bird525':
-    #     args.num_queries=525
-    # elif args.dataset_name== 'fish':
-    #     args.num_queries=183
-    # elif args.dataset_name== 'dog':
-    #     args.num_queries=120
-    # elif args.dataset_name== 'butterfly':
-    #     args.num_queries=65
-    # elif args.dataset_name== 'pet':
-    #     args.num_queries=37
-    # elif args.dataset_name== 'car':
-    #     args.num_queries=196
-    # elif args.dataset_name== 'craft':
-    #     args.num_queries=100
-    # else:
-    #     print ("Enter a valid dataset") 
-    #     exit()
+    if hasattr(args, 'dataset_name'):
+        if args.dataset_name=='cub':
+            args.num_queries=200
+        elif args.dataset_name== 'bird525':
+            args.num_queries=525
+        elif args.dataset_name== 'fish':
+            args.num_queries=183
+        elif args.dataset_name== 'dog':
+            args.num_queries=120
+        elif args.dataset_name== 'butterfly':
+            args.num_queries=65
+        elif args.dataset_name== 'pet':
+            args.num_queries=37
+        elif args.dataset_name== 'car':
+            args.num_queries=196
+        elif args.dataset_name== 'craft':
+            args.num_queries=100
+        else:
+            print ("Enter a valid dataset")
+            exit()
 
-    device = torch.device(args.device)
+
 
     backbone = build_backbone(args)
     transformer = build_transformer(args)
@@ -159,6 +160,9 @@ def build(args):
         )
 
     criterion = SetCriterion(args, model=model)
-    criterion.to(device)
+
+    if hasattr(args, 'device'):
+        device = torch.device(args.device)
+        criterion.to(device)
 
     return model, criterion
