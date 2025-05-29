@@ -11,3 +11,4 @@ opencv-python
 matplotlib
 transformers
 timm==0.9.0
+torchsampler
